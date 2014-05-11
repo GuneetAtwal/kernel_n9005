@@ -2443,9 +2443,17 @@ config MSM_CPU_FREQ_MIN
 	default 245760
 
 endif # CPU_FREQ_MSM
+
 config CPU_VOLTAGE_CONTROL
 	bool "Userspace CPU Voltage Control"
 	default y
+
+config INTELLI_PLUG
+	bool "Enable intelli-plug cpu hotplug driver"
+	default y
+	help
+	  Generic Intelli-plug cpu hotplug driver for ARM SOCs
+
 	help
 	  This enables userspace CPU Voltage Control.
 
