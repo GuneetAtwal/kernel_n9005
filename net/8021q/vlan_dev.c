@@ -325,6 +325,9 @@ static int vlan_dev_stop(struct net_device *dev)
 {
 	struct vlan_dev_priv *vlan = vlan_dev_priv(dev);
 	struct net_device *real_dev = vlan->real_dev;
+	
+	if (saddr == NULL)
+		saddr = dev->dev_addr;
 
 	dev_mc_unsync(real_dev, dev);
 	dev_uc_unsync(real_dev, dev);
