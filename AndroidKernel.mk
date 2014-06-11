@@ -94,6 +94,11 @@ ifeq "$(KS01_PROJECT)" "y"
 		DTS_FILES = $(wildcard $(TOP)/kernel/arch/arm/boot/dts/msm8974/$(DTS_NAME)-sec-ks01lte*.dts)
 	endif
 endif
+ifeq "$(JS_PROJECT)" "y"
+	ifeq "$(LOCALE_JPN)" "y"
+		DTS_FILES = $(wildcard $(TOP)/kernel/arch/arm/boot/dts/msm8974/$(DTS_NAME)-sec-js01ltejpn*.dts)
+	endif
+endif
 ifeq "$(KACTIVE_PROJECT)" "y"
 DTS_FILES = $(wildcard $(TOP)/kernel/arch/arm/boot/dts/msm8974pro/$(DTS_NAME)pro-ac-sec-kactive*.dts)
 endif
