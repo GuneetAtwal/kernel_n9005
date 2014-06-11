@@ -44,6 +44,7 @@
 #include <linux/backing-dev.h>
 #include <linux/bitops.h>
 #include <linux/ratelimit.h>
+#include <linux/ctype.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/jbd2.h>
@@ -696,6 +697,37 @@ int jbd2_log_wait_commit(journal_t *journal, tid_t tid)
 }
 
 /*
+ * When this function returns the transaction corresponding to tid
+ * will be completed.  If the transaction has currently running, start
+ * committing that transaction before waiting for it to complete.  If
+ * the transaction id is stale, it is by definition already completed,
+ * so just return SUCCESS.
+ */
+int jbd2_complete_transaction(journal_t *journal, tid_t tid)
+{
+	int	need_to_wait = 1;
+
+	read_lock(&journal->j_state_lock);
+	if (journal->j_running_transaction &&
+	    journal->j_running_transaction->t_tid == tid) {
+		if (journal->j_commit_request != tid) {
+			/* transaction not yet started, so request it */
+			read_unlock(&journal->j_state_lock);
+			jbd2_log_start_commit(journal, tid);
+			goto wait_commit;
+		}
+	} else if (!(journal->j_committing_transaction &&
+		     journal->j_committing_transaction->t_tid == tid))
+		need_to_wait = 0;
+	read_unlock(&journal->j_state_lock);
+	if (!need_to_wait)
+		return 0;
+wait_commit:
+	return jbd2_log_wait_commit(journal, tid);
+}
+EXPORT_SYMBOL(jbd2_complete_transaction);
+
+/*
  * Log buffer allocation routines:
  */
 
@@ -714,6 +746,58 @@ int jbd2_journal_next_log_block(journal_t *journal, unsigned long long *retp)
 	write_unlock(&journal->j_state_lock);
 	return jbd2_journal_bmap(journal, blocknr, retp);
 }
+
+/* print bh for debugging if journal mount fails */
+void journal_print_block_data(journal_superblock_t *sb, sector_t blocknr, 
+				unsigned char *data_to_dump, int start, int len)
+{
+	int i, j;
+	int bh_offset = (start / 16) * 16;
+	char row_data[17] = { 0, };
+	char row_hex[50] = { 0, };
+	char ch;
+
+	printk(KERN_ERR "Journal error somewhere, printing data in hex\n");
+	if (sb)
+		printk(KERN_ERR " [j.info] s_uuid : %s, start block# : %u, maxlen %u\n"
+			, sb->s_uuid, sb->s_start, sb->s_maxlen);
+	else
+		printk(KERN_ERR " [j.info] journal sb is null!\n");
+		
+	printk(KERN_ERR " dump block# : %llu, start offset(byte) :", blocknr);
+	printk(KERN_ERR " %d, length(byte) : %d\n", start, len);
+	printk(KERN_ERR "-------------------------------------------------\n");
+
+	for (i = 0; i < (len + 15) / 16; i++) {
+		for (j = 0; j < 16; j++) {
+			ch = *(data_to_dump + bh_offset + j);
+			if (start <= bh_offset + j
+				&& start + len > bh_offset + j) {
+
+				if (isascii(ch) && isprint(ch))
+					sprintf(row_data + j, "%c", ch);
+				else
+					sprintf(row_data + j, ".");
+
+				sprintf(row_hex + (j * 3), "%2.2x ", ch);
+				} else {
+					sprintf(row_data + j, " ");
+					sprintf(row_hex + (j * 3), "-- ");
+				}
+			}
+
+			printk(KERN_ERR "0x%4.4x : %s | %s\n"
+					, bh_offset, row_hex, row_data);
+			bh_offset += 16;
+		}
+		printk(KERN_ERR "---------------------------------------------------\n");
+}
+void journal_print_bh(journal_superblock_t *sb, struct buffer_head *bh,
+			int start, int len)
+{
+	journal_print_block_data(sb, bh->b_blocknr, bh->b_data, start, len);
+}
+
 
 /*
  * Conversion of logical to physical block numbers for the journal
@@ -1380,7 +1464,7 @@ EXPORT_SYMBOL(jbd2_journal_update_sb_errno);
  * Update a journal's errno.  Write updated superblock to disk waiting for IO
  * to complete.
  */
-static void jbd2_journal_update_sb_errno(journal_t *journal)
+void jbd2_journal_update_sb_errno(journal_t *journal)
 {
 	journal_superblock_t *sb = journal->j_superblock;
 
@@ -1392,6 +1476,7 @@ static void jbd2_journal_update_sb_errno(journal_t *journal)
 
 	jbd2_write_superblock(journal, WRITE_SYNC);
 }
+EXPORT_SYMBOL(jbd2_journal_update_sb_errno);
 
 /*
  * Read the superblock for a given journal, performing initial
@@ -1456,6 +1541,8 @@ static int journal_get_superblock(journal_t *journal)
 	return 0;
 
 out:
+	/* print bh if journal mount fails */
+	journal_print_bh(sb, bh, 0, 4096);
 	journal_fail_superblock(journal);
 	return err;
 }

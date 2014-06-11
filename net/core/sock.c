@@ -793,12 +793,12 @@ set_rcvbuf:
 		sock_valbool_flag(sk, SOCK_WIFI_STATUS, valbool);
 		break;
 
-	case SO_PEEK_OFF:
-		if (sock->ops->set_peek_off)
-			sock->ops->set_peek_off(sk, val);
-		else
-			ret = -EOPNOTSUPP;
-		break;
+   case SO_PEEK_OFF:
+        if (sock->ops->set_peek_off)
+        sock->ops->set_peek_off(sk, val);
+        else
+        ret = -EOPNOTSUPP;
+    break;
 
 	case SO_NOFCS:
 		sock_valbool_flag(sk, SOCK_NOFCS, valbool);
@@ -2281,11 +2281,6 @@ int sock_common_recvmsg(struct kiocb *iocb, struct socket *sock,
 	struct sock *sk = sock->sk;
 	int addr_len = 0;
 	int err;
-	int npages = (data_len + (PAGE_SIZE - 1)) >> PAGE_SHIFT;
-
-	err = -EMSGSIZE;
-	if (npages > MAX_SKB_FRAGS)
-		goto failure;
 
 	err = sk->sk_prot->recvmsg(iocb, sk, msg, size, flags & MSG_DONTWAIT,
 				   flags & ~MSG_DONTWAIT, &addr_len);
